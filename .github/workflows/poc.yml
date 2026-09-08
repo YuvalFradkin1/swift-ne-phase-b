@@ -1,81 +1,53 @@
 name: swift-network-evolution VLE Phase B
-
 on:
   workflow_dispatch:
-
+  push:
+    branches: [master]
 jobs:
   phase-b:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Swift 6.3.3
         run: |
           wget -q https://download.swift.org/swift-6.3.3-release/ubuntu2404/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE-ubuntu24.04.tar.gz
           tar xzf swift-6.3.3-RELEASE-ubuntu24.04.tar.gz
           echo "$PWD/swift-6.3.3-RELEASE-ubuntu24.04/usr/bin" >> $GITHUB_PATH
-
       - name: Provenance
         run: uname -m && uname -r && swift --version
-
-      - name: Clone vulnerable commit (pre-558eb3e)
+      - name: Clone vulnerable commit
         run: |
           git clone https://github.com/apple/swift-network-evolution.git vuln-repo
           cd vuln-repo
           git checkout d6a5305ea4c1eb4b96ee83e428dc6d73da23e3e4
           echo "Commit: $(git log --oneline -1)"
-          echo "=== VLE code before fix ==="
-          grep -n "T(variable\|T(exactly\|vle\|overflow" \
-            Sources/SwiftNetwork/Utilities/Deserializer.swift | head -10
-
-      - name: CONTROL — swift test on patched commit (expect PASS)
+          grep -n "T(variable\|T(exactly" Sources/SwiftNetwork/Utilities/Deserializer.swift | head -5
+      - name: CONTROL patched commit
         run: |
           cd vuln-repo
           git checkout 558eb3e44f07124bd4fbaa9475f22a104718c3cf
-          echo "=== PATCHED commit: $(git log --oneline -1) ==="
+          echo "PATCHED: $(git log --oneline -1)"
           set +e
           swift test --filter "testDeserializeVLEWithSizeOverflowsTargetType" 2>&1
-          EXIT=$?
-          set -e
+          EXIT=$?; set -e
           echo "control_exit=$EXIT" >> $GITHUB_ENV
-          echo "CONTROL exit: $EXIT"
-          [ $EXIT -eq 0 ] && echo "CONTROL: PASS (test passes on patched)" || echo "CONTROL: exit $EXIT"
-
-      - name: EXPLOIT — swift test on vulnerable commit (expect TRAP/crash)
+          echo "CONTROL exit=$EXIT"
+      - name: EXPLOIT vulnerable commit
         run: |
           cd vuln-repo
           git checkout d6a5305ea4c1eb4b96ee83e428dc6d73da23e3e4
-          echo "=== VULNERABLE commit: $(git log --oneline -1) ==="
+          echo "VULNERABLE: $(git log --oneline -1)"
           set +e
           swift test --filter "testDeserializeVLEWithSizeOverflowsTargetType" 2>&1
-          EXIT=$?
-          set -e
+          EXIT=$?; set -e
           echo "exploit_exit=$EXIT" >> $GITHUB_ENV
-          echo "EXPLOIT exit: $EXIT"
-          if [ $EXIT -eq 134 ]; then
-            echo "*** SIGABRT CONFIRMED *** — VLE overflow trapped"
-            echo "RESULT=SIGABRT" >> $GITHUB_ENV
-          elif [ $EXIT -eq 139 ]; then
-            echo "*** SIGSEGV CONFIRMED ***"
-            echo "RESULT=SIGSEGV" >> $GITHUB_ENV
-          elif [ $EXIT -eq 0 ]; then
-            echo "Test passed — fix may already be present"
-            echo "RESULT=PASSED" >> $GITHUB_ENV
-          else
-            echo "Exit: $EXIT"
-            echo "RESULT=EXIT_$EXIT" >> $GITHUB_ENV
-          fi
-
+          echo "EXPLOIT exit=$EXIT"
+          [ $EXIT -eq 134 ] && echo "*** SIGABRT ***" && echo "RESULT=SIGABRT" >> $GITHUB_ENV || true
+          [ $EXIT -eq 139 ] && echo "*** SIGSEGV ***" && echo "RESULT=SIGSEGV" >> $GITHUB_ENV || true
+          [ $EXIT -eq 0 ]   && echo "RESULT=PASSED" >> $GITHUB_ENV || true
+          [ -z "$RESULT" ]  && echo "RESULT=EXIT_$EXIT" >> $GITHUB_ENV || true
       - name: Summary
         if: always()
         run: |
-          echo "=================================="
-          echo " Phase B — VLE overflow"
-          echo "=================================="
-          echo " Swift: $(swift --version 2>/dev/null | head -1)"
-          echo " Control (patched):    $control_exit"
-          echo " Exploit (vulnerable): $exploit_exit"
-          echo " Result: $RESULT"
-          echo "=================================="
-          [[ "$RESULT" == "SIGABRT" || "$RESULT" == "SIGSEGV" ]] && \
-            echo "Phase B: PASS" || echo "Phase B: INCONCLUSIVE"
+          echo "Control=$control_exit Exploit=$exploit_exit Result=$RESULT"
+          [[ "$RESULT" == SIGABRT || "$RESULT" == SIGSEGV ]] && echo "Phase B: PASS" || echo "Phase B: $RESULT"
