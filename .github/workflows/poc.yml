@@ -19,7 +19,7 @@ jobs:
         run: |
           git clone https://github.com/apple/swift-network-evolution.git vuln-repo
           cd vuln-repo
-          git checkout d6a5305ea4c1eb4b96ee83e428dc6d73da23e3e4
+          git checkout a12af65d12c24ca5efe6b24d9fe3b5b7c95478bd
           echo "Commit: $(git log --oneline -1)"
           grep -n "T(variable\|T(exactly" Sources/SwiftNetwork/Utilities/Deserializer.swift | head -5
       - name: CONTROL patched commit
@@ -35,7 +35,7 @@ jobs:
       - name: EXPLOIT vulnerable commit
         run: |
           cd vuln-repo
-          git checkout d6a5305ea4c1eb4b96ee83e428dc6d73da23e3e4
+          git checkout a12af65d12c24ca5efe6b24d9fe3b5b7c95478bd
           echo "VULNERABLE: $(git log --oneline -1)"
           set +e
           swift test --filter "testDeserializeVLEWithSizeOverflowsTargetType" 2>&1
